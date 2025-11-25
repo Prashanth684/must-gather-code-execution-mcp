@@ -1,0 +1,25 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Logs
+*.log
+
+# Must-gather data (large files - users provide their own)
+quay-io-*/
+*.logs
+
+# OS files
+.DS_Store
+
+# Environment
+.env
+
+# Editor files
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
