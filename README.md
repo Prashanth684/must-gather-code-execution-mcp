@@ -1,10 +1,10 @@
-# Must-Gather MCP Server
+# Must-Gather Code Execution MCP Server
 
-Efficient OpenShift must-gather analysis using the Model Context Protocol (MCP) and code execution patterns.
+Efficient OpenShift must-gather analysis using [Anthropic's code execution pattern](https://www.anthropic.com/engineering/code-execution-with-mcp) for the Model Context Protocol (MCP).
 
 ## Overview
 
-This project demonstrates how to apply the **code execution approach** from [Anthropic's MCP article](https://www.anthropic.com/engineering/code-execution-with-mcp) to OpenShift must-gather data analysis.
+This project implements [Anthropic's code execution approach for MCP](https://www.anthropic.com/engineering/code-execution-with-mcp), applying it to OpenShift must-gather data analysis. Instead of passing large data files through the model's context, Claude writes analysis code that processes data locally and returns only insights.
 
 ### The Problem
 
@@ -281,13 +281,17 @@ const correlations = failingPods.map(pod => {
 });
 ```
 
-## Benefits
+## Benefits of Code Execution Pattern
+
+Following [Anthropic's code execution approach](https://www.anthropic.com/engineering/code-execution-with-mcp), this implementation provides:
 
 1. **Token Efficiency**: Process 539MB locally, return only insights (~98% reduction)
 2. **Complex Queries**: Cross-reference events, logs, resources without round-trips
 3. **Privacy**: Sensitive cluster data stays in execution environment
 4. **Reusable**: Build libraries of common diagnostic patterns
 5. **Progressive**: Load only the data you need when you need it
+
+Instead of passing data through MCP tools, Claude writes TypeScript code that uses the `MustGatherAnalyzer` library to process data locally and return compact summaries.
 
 ## Must-Gather Data Structure
 
