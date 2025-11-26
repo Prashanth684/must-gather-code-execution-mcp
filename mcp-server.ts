@@ -1,8 +1,19 @@
+#!/usr/bin/env node
+
 /**
- * MCP Server for Must-Gather Analysis
+ * Progressive Disclosure MCP Server for Must-Gather Analysis
  *
- * Exposes OpenShift must-gather data through the Model Context Protocol.
- * Enables efficient code execution patterns for cluster diagnostics.
+ * Implements Anthropic's progressive disclosure pattern for efficient must-gather analysis.
+ * Instead of exposing all 11+ tools upfront, this server provides 2 meta-tools that enable
+ * agents to discover analysis capabilities on-demand.
+ *
+ * Benefits:
+ * - 92% reduction in initial context (from ~6,000 to ~500 tokens)
+ * - Scalable to 100+ analysis methods with no context penalty
+ * - Agents discover methods by intent, not exact names
+ * - On-demand type exploration
+ *
+ * Based on: https://github.com/harche/ProDisco
  */
 
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
@@ -10,154 +21,105 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
+  ListResourcesRequestSchema,
+  ReadResourceRequestSchema,
   Tool
 } from '@modelcontextprotocol/sdk/types.js';
-import { MustGatherAnalyzer } from './must-gather-lib.js';
+import { searchAnalysisMethods, SearchParams } from './src/analysis/search.js';
+import { getTypeDefinitions, getAllTypeNames } from './src/codegen/typeGenerator.js';
+import * as fs from 'fs';
+import * as path from 'path';
 
-// Initialize the must-gather analyzer
 const MUST_GATHER_PATH = process.env.MUST_GATHER_PATH || process.cwd();
-const analyzer = new MustGatherAnalyzer({ basePath: MUST_GATHER_PATH });
 
-// Define available tools
+// Progressive Disclosure: Only 2 meta-tools!
 const TOOLS: Tool[] = [
   {
-    name: 'list_namespaces',
-    description: 'List all namespaces in the cluster',
-    inputSchema: {
-      type: 'object',
-      properties: {},
-      required: []
-    }
-  },
-  {
-    name: 'get_nodes',
-    description: 'Get all nodes with their status, roles, and conditions',
-    inputSchema: {
-      type: 'object',
-      properties: {},
-      required: []
-    }
-  },
-  {
-    name: 'get_pods',
-    description: 'Get pods from a specific namespace or all namespaces',
+    name: 'mustGather.searchAnalysis',
+    description: 'Must-gather analysis via Progressive Disclosure. Use mustGather.searchAnalysis to discover available analysis methods. ' +
+      'After discovering methods, READ the must-gather-lib.ts resource (uri: file:///must-gather-lib.ts) to get the library code. ' +
+      'Then WRITE a TypeScript script that imports and uses the MustGatherAnalyzer class to analyze the data locally. ' +
+      'Execute the script with tsx or ts-node to process the must-gather data. ' +
+      'The must-gather path is: ' + MUST_GATHER_PATH + '. ' +
+      'Example workflow: (1) Search for methods, (2) Read library resource, (3) Write analysis script that imports from ./must-gather-lib.js, (4) Execute with tsx.',
     inputSchema: {
       type: 'object',
       properties: {
-        namespace: {
+        component: {
           type: 'string',
-          description: 'Namespace to query (optional, returns all if not specified)'
-        }
-      },
-      required: []
-    }
-  },
-  {
-    name: 'get_failing_pods',
-    description: 'Get all pods that are failing, crashed, or have restarting containers',
-    inputSchema: {
-      type: 'object',
-      properties: {},
-      required: []
-    }
-  },
-  {
-    name: 'get_pod_logs',
-    description: 'Get logs for a specific pod',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        namespace: {
-          type: 'string',
-          description: 'Namespace of the pod'
+          description: 'Component to analyze (e.g., "etcd", "operators", "pods", "nodes", "events")',
+          enum: ['etcd', 'operators', 'pods', 'nodes', 'events', 'namespaces']
         },
-        pod: {
+        severity: {
           type: 'string',
-          description: 'Name of the pod'
+          description: 'Severity level to filter by',
+          enum: ['critical', 'warning', 'info']
         },
-        container: {
+        scope: {
           type: 'string',
-          description: 'Container name (optional, returns first container if not specified)'
+          description: 'Scope of analysis',
+          enum: ['cluster', 'namespace', 'pod', 'node', 'container']
+        },
+        category: {
+          type: 'string',
+          description: 'Category of analysis',
+          enum: ['health', 'performance', 'configuration', 'logs']
+        },
+        keyword: {
+          type: 'string',
+          description: 'Keyword to search for (e.g., "degraded", "failing", "error", "crash")'
+        },
+        limit: {
+          type: 'number',
+          description: 'Maximum number of results to return (default 10, max 50)',
+          minimum: 1,
+          maximum: 50
         }
       },
-      required: ['namespace', 'pod']
+      required: []
     }
   },
   {
-    name: 'get_events',
-    description: 'Get cluster events from a specific namespace or all namespaces',
+    name: 'mustGather.getTypeDefinition',
+    description: 'Get TypeScript type definitions for must-gather data structures. Use this to understand the shape of data returned by analysis methods. Supports nested type exploration.',
     inputSchema: {
       type: 'object',
       properties: {
-        namespace: {
-          type: 'string',
-          description: 'Namespace to query (optional, returns all if not specified)'
+        typeNames: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Names of types to get definitions for (e.g., ["Pod", "Node", "Event"]). Available types: Node, Pod, Container, Event, EtcdHealth, ClusterOperator, Condition, MustGatherAnalyzer'
+        },
+        depth: {
+          type: 'number',
+          description: 'How deep to expand nested types (default 1, max 3)',
+          minimum: 1,
+          maximum: 3
+        },
+        includeExamples: {
+          type: 'boolean',
+          description: 'Include example values for types'
         }
       },
-      required: []
-    }
-  },
-  {
-    name: 'get_warning_events',
-    description: 'Get only warning and error events from the cluster',
-    inputSchema: {
-      type: 'object',
-      properties: {},
-      required: []
-    }
-  },
-  {
-    name: 'get_etcd_health',
-    description: 'Get etcd cluster health status',
-    inputSchema: {
-      type: 'object',
-      properties: {},
-      required: []
-    }
-  },
-  {
-    name: 'get_etcd_status',
-    description: 'Get detailed etcd endpoint status',
-    inputSchema: {
-      type: 'object',
-      properties: {},
-      required: []
-    }
-  },
-  {
-    name: 'get_cluster_operators',
-    description: 'Get all cluster operators with their availability and degradation status',
-    inputSchema: {
-      type: 'object',
-      properties: {},
-      required: []
-    }
-  },
-  {
-    name: 'get_degraded_operators',
-    description: 'Get only degraded or unavailable cluster operators',
-    inputSchema: {
-      type: 'object',
-      properties: {},
-      required: []
+      required: ['typeNames']
     }
   }
 ];
 
-// Create MCP server
 const server = new Server(
   {
-    name: 'must-gather-server',
-    version: '1.0.0'
+    name: 'must-gather-prodisco',
+    version: '2.0.0'
   },
   {
     capabilities: {
-      tools: {}
+      tools: {},
+      resources: {}
     }
   }
 );
 
-// Handle tool listing
+// List tools - only 2 meta-tools!
 server.setRequestHandler(ListToolsRequestSchema, async () => {
   return { tools: TOOLS };
 });
@@ -170,56 +132,69 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     let result: any;
 
     switch (name) {
-      case 'list_namespaces':
-        result = analyzer.listNamespaces();
-        break;
+      case 'mustGather.searchAnalysis': {
+        const searchParams: SearchParams = {
+          component: args?.component as string | undefined,
+          severity: args?.severity as 'critical' | 'warning' | 'info' | undefined,
+          scope: args?.scope as 'cluster' | 'namespace' | 'pod' | 'node' | 'container' | undefined,
+          category: args?.category as 'health' | 'performance' | 'configuration' | 'logs' | undefined,
+          keyword: args?.keyword as string | undefined,
+          limit: args?.limit as number | undefined
+        };
 
-      case 'get_nodes':
-        result = analyzer.getNodes();
-        break;
+        const methods = searchAnalysisMethods(searchParams);
 
-      case 'get_pods':
-        result = analyzer.getPods(args?.namespace as string | undefined);
+        result = {
+          summary: `Found ${methods.length} matching analysis method${methods.length === 1 ? '' : 's'}`,
+          totalMethods: methods.length,
+          methods: methods.map(m => ({
+            name: m.name,
+            signature: m.signature,
+            description: m.description,
+            component: m.component,
+            severity: m.severity,
+            scope: m.scope,
+            category: m.category,
+            parameters: m.parameters,
+            returns: m.returns,
+            example: m.example
+          })),
+          usage: 'CODE EXECUTION PATTERN:\n\n' +
+            '1. READ the library: Use ReadMcpResourceTool with server="must-gather" and uri="file:///must-gather-lib.ts"\n' +
+            '2. WRITE a TypeScript script in the current directory that:\n' +
+            '   - Imports: import { MustGatherAnalyzer } from \'./must-gather-lib.js\';\n' +
+            '   - Creates analyzer: const analyzer = new MustGatherAnalyzer({ basePath: \'' + MUST_GATHER_PATH + '\' });\n' +
+            '   - Calls the discovered methods above\n' +
+            '   - Processes data locally and returns concise results\n' +
+            '3. EXECUTE with: tsx your-script.ts\n\n' +
+            'This processes all data locally (no token overhead) and returns only insights.'
+        };
         break;
+      }
 
-      case 'get_failing_pods':
-        result = analyzer.getFailingPods();
-        break;
-
-      case 'get_pod_logs':
-        if (!args?.namespace || !args?.pod) {
-          throw new Error('namespace and pod are required');
+      case 'mustGather.getTypeDefinition': {
+        if (!args?.typeNames || !Array.isArray(args.typeNames)) {
+          throw new Error('typeNames array is required. Available types: ' + getAllTypeNames().join(', '));
         }
-        result = analyzer.getPodLogs(
-          args.namespace as string,
-          args.pod as string,
-          args.container as string | undefined
+
+        const types = getTypeDefinitions(
+          args.typeNames as string[],
+          (args.depth as number) || 1,
+          (args.includeExamples as boolean) || false
         );
-        break;
 
-      case 'get_events':
-        result = analyzer.getEvents(args?.namespace as string | undefined);
-        break;
+        if (types.length === 0) {
+          throw new Error(
+            `No types found. Available types: ${getAllTypeNames().join(', ')}`
+          );
+        }
 
-      case 'get_warning_events':
-        result = analyzer.getWarningEvents();
+        result = {
+          types,
+          availableTypes: getAllTypeNames()
+        };
         break;
-
-      case 'get_etcd_health':
-        result = analyzer.getEtcdHealth();
-        break;
-
-      case 'get_etcd_status':
-        result = analyzer.getEtcdStatus();
-        break;
-
-      case 'get_cluster_operators':
-        result = analyzer.getClusterOperators();
-        break;
-
-      case 'get_degraded_operators':
-        result = analyzer.getDegradedOperators();
-        break;
+      }
 
       default:
         throw new Error(`Unknown tool: ${name}`);
@@ -246,11 +221,74 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   }
 });
 
+// Expose must-gather-lib.ts as a resource for code execution
+server.setRequestHandler(ListResourcesRequestSchema, async () => {
+  return {
+    resources: [
+      {
+        uri: 'file:///must-gather-lib.ts',
+        name: 'Must-Gather Analysis Library',
+        description: 'TypeScript library for analyzing must-gather data. READ this resource, then WRITE it to ./must-gather-lib.ts in the current directory. ' +
+          'Your analysis scripts should import from it: import { MustGatherAnalyzer } from \'./must-gather-lib.js\'. ' +
+          'This enables local data processing with zero token overhead.',
+        mimeType: 'application/typescript'
+      },
+      {
+        uri: 'file:///must-gather-types.d.ts',
+        name: 'Must-Gather Type Definitions',
+        description: 'Complete TypeScript type definitions for all must-gather data structures and the MustGatherAnalyzer API.',
+        mimeType: 'application/typescript'
+      }
+    ]
+  };
+});
+
+server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
+  const uri = request.params.uri;
+
+  if (uri === 'file:///must-gather-lib.ts') {
+    const libPath = path.join(process.cwd(), 'must-gather-lib.ts');
+    if (!fs.existsSync(libPath)) {
+      throw new Error('must-gather-lib.ts not found');
+    }
+    const content = fs.readFileSync(libPath, 'utf8');
+    return {
+      contents: [
+        {
+          uri,
+          mimeType: 'application/typescript',
+          text: content
+        }
+      ]
+    };
+  }
+
+  if (uri === 'file:///must-gather-types.d.ts') {
+    // Generate comprehensive type definitions
+    const types = getTypeDefinitions(getAllTypeNames(), 2, false);
+    const content = types.map(t => t.definition).join('\n\n');
+    return {
+      contents: [
+        {
+          uri,
+          mimeType: 'application/typescript',
+          text: content
+        }
+      ]
+    };
+  }
+
+  throw new Error(`Unknown resource: ${uri}`);
+});
+
 // Start server
 async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error('Must-Gather MCP Server running on stdio');
+  console.error('Must-Gather Progressive Disclosure MCP Server running');
+  console.error('Must-gather path:', MUST_GATHER_PATH);
+  console.error('Pattern: Progressive Disclosure (2 meta-tools)');
+  console.error('Based on: https://github.com/harche/ProDisco');
 }
 
 main().catch((error) => {

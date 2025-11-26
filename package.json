@@ -1,7 +1,7 @@
 {
   "name": "must-gather-mcp-server",
-  "version": "1.0.0",
-  "description": "MCP server and helper library for efficient OpenShift must-gather analysis",
+  "version": "2.0.0",
+  "description": "Progressive Disclosure MCP server for efficient OpenShift must-gather analysis",
   "type": "module",
   "main": "dist/must-gather-lib.js",
   "bin": {
@@ -16,14 +16,17 @@
     "example:correlate": "tsx examples/analysis-patterns.ts correlate-events",
     "example:namespaces": "tsx examples/analysis-patterns.ts namespace-analysis",
     "example:detect": "tsx examples/analysis-patterns.ts detect-issues",
-    "example:mcp": "tsx examples/mcp-usage-example.ts"
+    "example:mcp": "tsx examples/mcp-usage-example.ts",
+    "example:prodisco": "tsx examples/progressive-disclosure-demo.ts"
   },
   "keywords": [
     "openshift",
     "must-gather",
     "mcp",
     "kubernetes",
-    "diagnostics"
+    "diagnostics",
+    "progressive-disclosure",
+    "code-execution"
   ],
   "author": "",
   "license": "MIT",

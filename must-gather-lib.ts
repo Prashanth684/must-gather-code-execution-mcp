@@ -49,12 +49,15 @@ export interface Event {
     name: string;
   };
   timestamp: string;
+  lastTimestamp?: string;
+  firstTimestamp?: string;
 }
 
 export interface EtcdHealth {
   endpoint: string;
   health: boolean;
   took: string;
+  error?: string;
 }
 
 export class MustGatherAnalyzer {

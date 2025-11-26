@@ -106,8 +106,10 @@ if (failingPods.length > 0) {
       console.log(`    - ${pod.name}`);
       console.log(`      Phase: ${pod.phase}`);
       console.log(`      Status: ${pod.status}`);
-      console.log(`      Restarts: ${pod.restarts}`);
-      console.log(`      Ready: ${pod.ready}/${pod.total_containers}`);
+      const totalRestarts = pod.containers.reduce((sum, c) => sum + c.restartCount, 0);
+      const readyContainers = pod.containers.filter(c => c.ready).length;
+      console.log(`      Restarts: ${totalRestarts}`);
+      console.log(`      Ready: ${readyContainers}/${pod.containers.length}`);
 
       // Try to get recent error from logs
       const logs = analyzer.getPodLogs(pod.namespace, pod.name);
