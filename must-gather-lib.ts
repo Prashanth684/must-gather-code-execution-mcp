@@ -126,14 +126,27 @@ export class MustGatherAnalyzer {
     const allPods: Pod[] = [];
 
     for (const ns of namespaces) {
-      const podsPath = path.join(this.dataDir, 'namespaces', ns, 'core', 'pods');
+      const podsPath = path.join(this.dataDir, 'namespaces', ns, 'pods');
       if (!fs.existsSync(podsPath)) {
         continue;
       }
 
-      const podFiles = fs.readdirSync(podsPath).filter(f => f.endsWith('.yaml'));
-      for (const file of podFiles) {
-        const content = fs.readFileSync(path.join(podsPath, file), 'utf8');
+      // Pod data is stored in subdirectories: pods/{pod-name}/{pod-name}.yaml
+      const podDirs = fs.readdirSync(podsPath).filter(f => {
+        const stat = fs.statSync(path.join(podsPath, f));
+        return stat.isDirectory();
+      });
+
+      for (const podDir of podDirs) {
+        // Look for the YAML file inside the pod directory
+        const podDirPath = path.join(podsPath, podDir);
+        const yamlFile = path.join(podDirPath, `${podDir}.yaml`);
+
+        if (!fs.existsSync(yamlFile)) {
+          continue;
+        }
+
+        const content = fs.readFileSync(yamlFile, 'utf8');
         const pod = yaml.parse(content);
 
         allPods.push({
@@ -168,16 +181,71 @@ export class MustGatherAnalyzer {
    * Get pod logs (from must-gather logs directory if available)
    */
   getPodLogs(namespace: string, podName: string, container?: string): string | null {
-    const logsPath = path.join(this.dataDir, 'namespaces', namespace, 'pods', podName, 'logs');
+    const podPath = path.join(this.dataDir, 'namespaces', namespace, 'pods', podName);
+
+    if (!fs.existsSync(podPath)) {
+      return null;
+    }
+
+    // Logs are stored in: pods/{pod-name}/{container-name}/{container-name}/logs/
+    // If no container specified, try to find the first available container with logs
+    let containerDir: string | null = null;
+
+    if (container) {
+      // Look for the specified container
+      const containerPath = path.join(podPath, container);
+      if (fs.existsSync(containerPath)) {
+        containerDir = containerPath;
+      }
+    } else {
+      // Find the first container directory
+      // Prefer a container that matches the pod name prefix (main container)
+      const dirs = fs.readdirSync(podPath).filter(f => {
+        const stat = fs.statSync(path.join(podPath, f));
+        return stat.isDirectory();
+      });
+
+      // Extract pod name without hash suffix for matching
+      const podBaseName = podName.replace(/-[a-z0-9]+-[a-z0-9]+$/, '');
+
+      // First try to find a container matching the pod base name
+      for (const dir of dirs) {
+        if (dir.includes(podBaseName) || podBaseName.includes(dir)) {
+          const potentialLogPath = path.join(podPath, dir, dir, 'logs');
+          if (fs.existsSync(potentialLogPath)) {
+            containerDir = path.join(podPath, dir);
+            break;
+          }
+        }
+      }
+
+      // If no match found, use the first container with logs
+      if (!containerDir) {
+        for (const dir of dirs) {
+          const potentialLogPath = path.join(podPath, dir, dir, 'logs');
+          if (fs.existsSync(potentialLogPath)) {
+            containerDir = path.join(podPath, dir);
+            break;
+          }
+        }
+      }
+    }
+
+    if (!containerDir) {
+      return null;
+    }
+
+    // The container name is repeated in the path structure
+    const containerName = path.basename(containerDir);
+    const logsPath = path.join(containerDir, containerName, 'logs');
 
     if (!fs.existsSync(logsPath)) {
       return null;
     }
 
+    // Look for current.log first, then any .log file
     const logFiles = fs.readdirSync(logsPath);
-    const targetLog = container
-      ? logFiles.find(f => f.includes(container))
-      : logFiles[0];
+    const targetLog = logFiles.find(f => f === 'current.log') || logFiles.find(f => f.endsWith('.log'));
 
     if (!targetLog) {
       return null;

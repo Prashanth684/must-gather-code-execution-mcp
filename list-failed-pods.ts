@@ -3,7 +3,7 @@
 import { MustGatherAnalyzer } from './must-gather-lib.js';
 
 const analyzer = new MustGatherAnalyzer({
-  basePath: '/home/psundara/Downloads/must-gather'
+  basePath: process.env.MUST_GATHER_PATH || '/path/to/must-gather'
 });
 
 console.log('Analyzing must-gather data for failed pods...\n');

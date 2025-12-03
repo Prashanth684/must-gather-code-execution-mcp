@@ -1,6 +1,6 @@
 # Must-Gather Progressive Disclosure MCP Server
 
-Efficient OpenShift must-gather analysis using [Anthropic's progressive disclosure pattern](https://github.com/harche/ProDisco) for the Model Context Protocol (MCP).
+Efficient OpenShift must-gather analysis using [Anthropic's progressive disclosure pattern](https://www.anthropic.com/engineering/code-execution-with-mcp) for the Model Context Protocol (MCP).
 
 ## Overview
 
@@ -54,11 +54,11 @@ Traditional AI agents struggle with must-gather analysis:
                       ↓
 ┌─────────────────────────────────────────────────────┐
 │  Progressive Disclosure Layer (2 Meta-Tools)        │
-│  ├─ mustGather.searchAnalysis()                    │
+│  ├─ mustGather_searchAnalysis()                    │
 │  │  → Returns: method signatures, examples         │
 │  │  → Tokens: ~200 per search                      │
 │  │                                                  │
-│  └─ mustGather.getTypeDefinition()                 │
+│  └─ mustGather_getTypeDefinition()                 │
 │     → Returns: TypeScript interfaces               │
 │     → Tokens: ~150 per type lookup                 │
 └─────────────────────────────────────────────────────┘
@@ -93,8 +93,8 @@ Traditional AI agents struggle with must-gather analysis:
 ### 1. Clone and Install
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/must-gather-mcp.git
-cd must-gather-mcp
+git clone https://github.com/Prshanth684/must-gather-code-execution-mcp.git
+cd must-gather-code-execution-mcp
 npm install
 npm run build
 ```
@@ -127,9 +127,9 @@ Configure in Claude Desktop (`claude_desktop_config.json`):
   "mcpServers": {
     "must-gather": {
       "command": "node",
-      "args": ["/path/to/must-gather-mcp/dist/mcp-server.js"],
+      "args": ["/absolute/path/to/must-gather-code-execution-mcp/dist/mcp-server.js"],
       "env": {
-        "MUST_GATHER_PATH": "/path/to/must-gather"
+        "MUST_GATHER_PATH": "/absolute/path/to/must-gather.local.xxxxx"
       }
     }
   }
@@ -146,7 +146,7 @@ User: "What's wrong with my cluster?"
 Agent thinks: "I need to discover critical cluster health methods"
 
 Step 1: SEARCH FOR METHODS
-→ Uses: mustGather.searchAnalysis({ severity: "critical", scope: "cluster" })
+→ Uses: mustGather_searchAnalysis({ severity: "critical", scope: "cluster" })
 → Returns:
   - getDegradedOperators(): ClusterOperator[]
   - getEtcdHealth(): EtcdHealth[]
@@ -190,7 +190,7 @@ Total: ~1,850 tokens first time, ~350 tokens subsequent (vs ~11,000 with traditi
 
 The MCP server uses **embedded instructions** in tool descriptions to guide AI agents through the code execution workflow:
 
-1. **Tool Description Instructions**: The `mustGather.searchAnalysis` tool description explicitly tells the agent to:
+1. **Tool Description Instructions**: The `mustGather_searchAnalysis` tool description explicitly tells the agent to:
    - Search for methods first
    - READ the library resource (uri: file:///must-gather-lib.ts)
    - WRITE a TypeScript script that imports from ./must-gather-lib.js
@@ -209,11 +209,11 @@ The MCP server uses **embedded instructions** in tool descriptions to guide AI a
    - WRITE it to ./must-gather-lib.ts
    - Import from it in analysis scripts
 
-This approach is inspired by [ProDisco](https://github.com/harche/ProDisco/blob/main/src/server.ts#L25), which pioneered embedding execution instructions directly in tool descriptions to guide LLMs through complex workflows.
+This approach embeds execution instructions directly in tool descriptions to guide LLMs through complex workflows.
 
 ## Available Meta-Tools
 
-### 1. `mustGather.searchAnalysis`
+### 1. `mustGather_searchAnalysis`
 
 Search for analysis methods by component, severity, scope, category, or keyword.
 
@@ -266,7 +266,7 @@ searchAnalysis({ category: "logs" })
 → Returns: getPodLogs
 ```
 
-### 2. `mustGather.getTypeDefinition`
+### 2. `mustGather_getTypeDefinition`
 
 Get TypeScript type definitions for must-gather data structures.
 
@@ -355,7 +355,7 @@ All 11 methods are indexed and discoverable via `searchAnalysis`.
 ### Run Progressive Disclosure Demo
 
 ```bash
-npm run example:prodisco
+npm run example:progressive-disclosure
 ```
 
 This demonstrates:
@@ -516,19 +516,19 @@ export class MustGatherAnalyzer {
 - No MCP server changes needed
 - No context overhead
 
-## Comparison to ProDisco
+## Progressive Disclosure Implementation
 
-This implementation adapts [ProDisco's](https://github.com/harche/ProDisco) progressive disclosure pattern for must-gather analysis:
+This implementation uses the progressive disclosure pattern for must-gather analysis:
 
-| Aspect | ProDisco (Kubernetes) | This Project (Must-Gather) |
-|--------|----------------------|---------------------------|
-| **Pattern** | Progressive Disclosure | Progressive Disclosure |
-| **Meta-Tools** | 2 (search, getType) | 2 (searchAnalysis, getTypeDefinition) |
-| **Domain** | Live Kubernetes API | Must-gather snapshots |
-| **Data Source** | `@kubernetes/client-node` | YAML/JSON files |
-| **Methods** | 90+ K8s API methods | 11+ analysis methods (extensible) |
-| **Token Reduction** | 98.7% | 92% (initial), 77% (total) |
-| **Discovery** | By resource & action | By component, severity, keyword |
+| Aspect | Details |
+|--------|---------|
+| **Pattern** | Progressive Disclosure |
+| **Meta-Tools** | 2 (searchAnalysis, getTypeDefinition) |
+| **Domain** | Must-gather snapshots |
+| **Data Source** | YAML/JSON files |
+| **Methods** | 11+ analysis methods (extensible) |
+| **Token Reduction** | 92% (initial), 77% (total) |
+| **Discovery** | By component, severity, keyword |
 
 ## Migration from v1.0
 
@@ -541,8 +541,8 @@ This implementation adapts [ProDisco's](https://github.com/harche/ProDisco) prog
 - ... 8 more
 
 **v2.0** exposes 2 meta-tools:
-- `mustGather.searchAnalysis(...)`
-- `mustGather.getTypeDefinition(...)`
+- `mustGather_searchAnalysis(...)`
+- `mustGather_getTypeDefinition(...)`
 
 ### Migration Path
 
@@ -584,7 +584,7 @@ To add new analysis methods:
 1. Add implementation to `must-gather-lib.ts`
 2. Add index entry to `src/analysis/methodIndex.ts`
 3. Add type definition to `src/codegen/typeGenerator.ts` (if new type)
-4. Build and test: `npm run build && npm run example:prodisco`
+4. Build and test: `npm run build && npm run example:progressive-disclosure`
 
 ## License
 
@@ -592,7 +592,6 @@ MIT
 
 ## Related
 
-- [ProDisco - Progressive Disclosure for Kubernetes](https://github.com/harche/ProDisco)
 - [Anthropic: Code Execution with MCP](https://www.anthropic.com/engineering/code-execution-with-mcp)
 - [Model Context Protocol](https://modelcontextprotocol.io/)
 - [OpenShift Must-Gather](https://docs.openshift.com/container-platform/latest/support/gathering-cluster-data.html)
@@ -602,11 +601,11 @@ MIT
 If you use this pattern in your work, please cite:
 
 ```bibtex
-@software{must_gather_prodisco,
+@software{must_gather_progressive_disclosure,
   title = {Must-Gather Progressive Disclosure MCP Server},
-  author = {Your Name},
+  author = {Prashanth Sundararaman},
   year = {2025},
-  url = {https://github.com/YOUR_USERNAME/must-gather-mcp},
-  note = {Based on ProDisco pattern by Harsh Choudhary}
+  url = {https://github.com/Prshanth684/must-gather-code-execution-mcp},
+  note = {Based on Anthropic's progressive disclosure pattern for MCP}
 }
 ```

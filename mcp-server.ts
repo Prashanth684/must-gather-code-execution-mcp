@@ -12,8 +12,6 @@
  * - Scalable to 100+ analysis methods with no context penalty
  * - Agents discover methods by intent, not exact names
  * - On-demand type exploration
- *
- * Based on: https://github.com/harche/ProDisco
  */
 
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
@@ -31,17 +29,20 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 const MUST_GATHER_PATH = process.env.MUST_GATHER_PATH || process.cwd();
+const REPO_ROOT = path.dirname(new URL(import.meta.url).pathname).replace(/\/dist$/, '');
+const CACHE_DIR = path.join(REPO_ROOT, 'cache');
 
 // Progressive Disclosure: Only 2 meta-tools!
 const TOOLS: Tool[] = [
   {
-    name: 'mustGather.searchAnalysis',
-    description: 'Must-gather analysis via Progressive Disclosure. Use mustGather.searchAnalysis to discover available analysis methods. ' +
-      'After discovering methods, READ the must-gather-lib.ts resource (uri: file:///must-gather-lib.ts) to get the library code. ' +
-      'Then WRITE a TypeScript script that imports and uses the MustGatherAnalyzer class to analyze the data locally. ' +
-      'Execute the script with tsx or ts-node to process the must-gather data. ' +
+    name: 'mustGather_searchAnalysis',
+    description: 'Must-gather analysis via Progressive Disclosure. Use mustGather_searchAnalysis to discover available analysis methods. ' +
+      'CRITICAL: The must-gather-lib.ts already exists in the repository root - DO NOT read or write it again! ' +
+      'Write your analysis TypeScript script to ' + CACHE_DIR + '/analysis-<timestamp>.ts that imports from ../must-gather-lib.js and uses MustGatherAnalyzer. ' +
+      'Execute with npx tsx ' + CACHE_DIR + '/analysis-<timestamp>.ts (no compilation needed). ' +
+      'CLEANUP: After execution completes, DELETE ' + CACHE_DIR + '/analysis-<timestamp>.ts using rm -f. ' +
       'The must-gather path is: ' + MUST_GATHER_PATH + '. ' +
-      'Example workflow: (1) Search for methods, (2) Read library resource, (3) Write analysis script that imports from ./must-gather-lib.js, (4) Execute with tsx.',
+      'Workflow: Search methods → Write script to ' + CACHE_DIR + '/ → Execute → Cleanup ' + CACHE_DIR + '/ files.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -52,7 +53,7 @@ const TOOLS: Tool[] = [
         },
         severity: {
           type: 'string',
-          description: 'Severity level to filter by',
+          description: 'Severity level to filter by. IMPORTANT: Start with broad searches (no severity filter) to avoid missing relevant methods. Only use specific severity filters if you know exactly what you need.',
           enum: ['critical', 'warning', 'info']
         },
         scope: {
@@ -67,7 +68,7 @@ const TOOLS: Tool[] = [
         },
         keyword: {
           type: 'string',
-          description: 'Keyword to search for (e.g., "degraded", "failing", "error", "crash")'
+          description: 'Keyword to search for (e.g., "degraded", "failing", "error", "crash"). Use partial keywords for broader matches (e.g., "fail" instead of "failing").'
         },
         limit: {
           type: 'number',
@@ -80,7 +81,7 @@ const TOOLS: Tool[] = [
     }
   },
   {
-    name: 'mustGather.getTypeDefinition',
+    name: 'mustGather_getTypeDefinition',
     description: 'Get TypeScript type definitions for must-gather data structures. Use this to understand the shape of data returned by analysis methods. Supports nested type exploration.',
     inputSchema: {
       type: 'object',
@@ -108,7 +109,7 @@ const TOOLS: Tool[] = [
 
 const server = new Server(
   {
-    name: 'must-gather-prodisco',
+    name: 'must-gather-progressive-disclosure',
     version: '2.0.0'
   },
   {
@@ -132,7 +133,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     let result: any;
 
     switch (name) {
-      case 'mustGather.searchAnalysis': {
+      case 'mustGather_searchAnalysis': {
         const searchParams: SearchParams = {
           component: args?.component as string | undefined,
           severity: args?.severity as 'critical' | 'warning' | 'info' | undefined,
@@ -160,19 +161,20 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             example: m.example
           })),
           usage: 'CODE EXECUTION PATTERN:\n\n' +
-            '1. READ the library: Use ReadMcpResourceTool with server="must-gather" and uri="file:///must-gather-lib.ts"\n' +
-            '2. WRITE a TypeScript script in the current directory that:\n' +
-            '   - Imports: import { MustGatherAnalyzer } from \'./must-gather-lib.js\';\n' +
+            '1. WRITE your analysis TypeScript script to ' + CACHE_DIR + '/analysis-<timestamp>.ts that:\n' +
+            '   - Imports: import { MustGatherAnalyzer } from \'../must-gather-lib.js\';\n' +
             '   - Creates analyzer: const analyzer = new MustGatherAnalyzer({ basePath: \'' + MUST_GATHER_PATH + '\' });\n' +
             '   - Calls the discovered methods above\n' +
             '   - Processes data locally and returns concise results\n' +
-            '3. EXECUTE with: tsx your-script.ts\n\n' +
-            'This processes all data locally (no token overhead) and returns only insights.'
+            '2. EXECUTE: npx tsx ' + CACHE_DIR + '/analysis-<timestamp>.ts (tsx handles TypeScript directly, no compilation needed)\n' +
+            '3. CLEANUP: After execution, DELETE file: rm -f ' + CACHE_DIR + '/analysis-<timestamp>.ts\n\n' +
+            'NOTE: must-gather-lib.ts already exists in the repository root - DO NOT read or write it!\n\n' +
+            'This processes all data locally (no token overhead) and returns only insights. Always cleanup cache files after execution.'
         };
         break;
       }
 
-      case 'mustGather.getTypeDefinition': {
+      case 'mustGather_getTypeDefinition': {
         if (!args?.typeNames || !Array.isArray(args.typeNames)) {
           throw new Error('typeNames array is required. Available types: ' + getAllTypeNames().join(', '));
         }
@@ -228,8 +230,10 @@ server.setRequestHandler(ListResourcesRequestSchema, async () => {
       {
         uri: 'file:///must-gather-lib.ts',
         name: 'Must-Gather Analysis Library',
-        description: 'TypeScript library for analyzing must-gather data. READ this resource, then WRITE it to ./must-gather-lib.ts in the current directory. ' +
-          'Your analysis scripts should import from it: import { MustGatherAnalyzer } from \'./must-gather-lib.js\'. ' +
+        description: 'TypeScript library for analyzing must-gather data. NOTE: This file already exists in the repository root - DO NOT read or write it! ' +
+          'Your analysis scripts (in ' + CACHE_DIR + '/) should import from it: import { MustGatherAnalyzer } from \'../must-gather-lib.js\'. ' +
+          'Execute scripts with npx tsx ' + CACHE_DIR + '/analysis-<timestamp>.ts (no compilation needed). ' +
+          'ALWAYS cleanup after execution: rm -f ' + CACHE_DIR + '/analysis-<timestamp>.ts. ' +
           'This enables local data processing with zero token overhead.',
         mimeType: 'application/typescript'
       },
@@ -247,9 +251,11 @@ server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
   const uri = request.params.uri;
 
   if (uri === 'file:///must-gather-lib.ts') {
-    const libPath = path.join(process.cwd(), 'must-gather-lib.ts');
+    // When running from dist/, go up one level to find the source .ts file
+    const serverDir = path.dirname(new URL(import.meta.url).pathname);
+    const libPath = path.join(serverDir, '..', 'must-gather-lib.ts');
     if (!fs.existsSync(libPath)) {
-      throw new Error('must-gather-lib.ts not found');
+      throw new Error('must-gather-lib.ts not found at ' + libPath);
     }
     const content = fs.readFileSync(libPath, 'utf8');
     return {
@@ -283,12 +289,17 @@ server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
 
 // Start server
 async function main() {
+  // Ensure cache directory exists
+  if (!fs.existsSync(CACHE_DIR)) {
+    fs.mkdirSync(CACHE_DIR, { recursive: true });
+  }
+
   const transport = new StdioServerTransport();
   await server.connect(transport);
   console.error('Must-Gather Progressive Disclosure MCP Server running');
   console.error('Must-gather path:', MUST_GATHER_PATH);
+  console.error('Cache directory:', CACHE_DIR);
   console.error('Pattern: Progressive Disclosure (2 meta-tools)');
-  console.error('Based on: https://github.com/harche/ProDisco');
 }
 
 main().catch((error) => {

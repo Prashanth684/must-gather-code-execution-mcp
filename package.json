@@ -17,7 +17,7 @@
     "example:namespaces": "tsx examples/analysis-patterns.ts namespace-analysis",
     "example:detect": "tsx examples/analysis-patterns.ts detect-issues",
     "example:mcp": "tsx examples/mcp-usage-example.ts",
-    "example:prodisco": "tsx examples/progressive-disclosure-demo.ts"
+    "example:progressive-disclosure": "tsx examples/progressive-disclosure-demo.ts"
   },
   "keywords": [
     "openshift",

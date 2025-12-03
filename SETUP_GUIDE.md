@@ -40,10 +40,10 @@ Add the must-gather server to the `mcpServers` section:
     "must-gather": {
       "command": "node",
       "args": [
-        "/home/psundara/Downloads/must-gather/dist/mcp-server.js"
+        "/absolute/path/to/must-gather-code-execution-mcp/dist/mcp-server.js"
       ],
       "env": {
-        "MUST_GATHER_PATH": "/home/psundara/Downloads/must-gather"
+        "MUST_GATHER_PATH": "/absolute/path/to/must-gather.local.xxxxx"
       }
     }
   }
@@ -51,7 +51,8 @@ Add the must-gather server to the `mcpServers` section:
 ```
 
 **Important**: Update the paths to match your actual file locations:
-- Replace `/home/psundara/Downloads/must-gather` with your actual must-gather directory
+- Replace `/absolute/path/to/must-gather-code-execution-mcp` with the directory where you cloned this project
+- Replace `/absolute/path/to/must-gather.local.xxxxx` with your actual must-gather data directory
 - Use absolute paths, not relative paths
 
 ### Example with Multiple MCP Servers
@@ -68,10 +69,10 @@ If you already have other MCP servers configured:
     "must-gather": {
       "command": "node",
       "args": [
-        "/home/psundara/Downloads/must-gather/dist/mcp-server.js"
+        "/absolute/path/to/must-gather-code-execution-mcp/dist/mcp-server.js"
       ],
       "env": {
-        "MUST_GATHER_PATH": "/home/psundara/Downloads/must-gather"
+        "MUST_GATHER_PATH": "/absolute/path/to/must-gather.local.xxxxx"
       }
     }
   }
@@ -94,18 +95,11 @@ In Claude Desktop, you should see the must-gather server connected. You can veri
 Can you list the available MCP tools?
 ```
 
-You should see 11 must-gather tools available:
-- list_namespaces
-- get_nodes
-- get_pods
-- get_failing_pods
-- get_pod_logs
-- get_events
-- get_warning_events
-- get_etcd_health
-- get_etcd_status
-- get_cluster_operators
-- get_degraded_operators
+You should see 2 progressive disclosure meta-tools:
+- `mustGather_searchAnalysis` - Search for analysis methods by component, severity, scope, category, or keyword
+- `mustGather_getTypeDefinition` - Get TypeScript type definitions for must-gather data structures
+
+These 2 meta-tools provide access to 11+ analysis methods through progressive discovery, reducing initial context by 92%.
 
 ## Step 5: Start Analyzing!
 
@@ -115,20 +109,17 @@ Now you can ask Claude to analyze your must-gather data efficiently:
 
 **Quick health check:**
 ```
-Can you give me a quick health overview of the cluster?
-Write code that checks the cluster operators, etcd health, and failing pods.
+What's wrong with my cluster? Check the critical health issues.
 ```
 
-**Find issues:**
+**Find specific issues:**
 ```
-Find all failing pods and show me their last error messages.
-Use code execution to process the logs locally and return only summaries.
+Find all failing pods and correlate them with recent error events.
 ```
 
 **Investigate operators:**
 ```
-Which cluster operators are degraded? For each degraded operator,
-find related warning events and failing pods.
+Which cluster operators are degraded? Show me detailed information.
 ```
 
 **Comprehensive diagnostic:**
@@ -140,38 +131,47 @@ Run a comprehensive diagnostic on this must-gather data:
 Return a structured report.
 ```
 
+Claude will use progressive disclosure to:
+1. Search for relevant analysis methods
+2. Read the must-gather library resource
+3. Write TypeScript code to analyze the data locally
+4. Execute the code and return concise results
+
 ## How It Works
 
-When you ask Claude a question:
+Progressive disclosure + code execution workflow:
 
-1. **Claude writes code** that calls the MCP tools
-2. **Code executes locally** in a sandboxed environment
-3. **Data is processed** without going through Claude's context
-4. **Only summaries** are returned to Claude
-5. **Result**: 98% fewer tokens used!
+1. **Search for methods** - Claude uses `mustGather_searchAnalysis` to find relevant analysis methods by intent
+2. **Get type definitions** - Claude uses `mustGather_getTypeDefinition` to understand data structures
+3. **Read library resource** - Claude reads the `must-gather-lib.ts` resource to get the analyzer code
+4. **Write analysis script** - Claude writes a TypeScript script that imports and uses the discovered methods
+5. **Execute locally** - Claude runs the script with tsx to process data locally
+6. **Return summaries** - Only concise results are returned, not raw data
+7. **Result**: 92% reduction in initial context, 77% fewer tokens overall!
 
 ### Example Code Claude Might Write
 
 ```typescript
-// Get cluster health overview
-const nodes = await mustGather.get_nodes();
-const operators = await mustGather.get_cluster_operators();
-const etcd = await mustGather.get_etcd_health();
+// After discovering getDegradedOperators and getEtcdHealth methods
+import { MustGatherAnalyzer } from './must-gather-lib.js';
+
+const analyzer = new MustGatherAnalyzer({
+  basePath: '/path/to/must-gather.local.xxxxx'
+});
 
 // Process locally - no token overhead
-const degraded = operators.filter(op => op.degraded === 'True');
+const degraded = analyzer.getDegradedOperators();
+const etcd = analyzer.getEtcdHealth();
 const unhealthyEtcd = etcd.filter(e => !e.health);
-const notReadyNodes = nodes.filter(n => n.status !== 'Ready');
 
 // Return compact summary
-return {
-  health: unhealthyEtcd.length === 0 ? 'Healthy' : 'Degraded',
+console.log(JSON.stringify({
+  status: degraded.length === 0 && unhealthyEtcd.length === 0 ? 'Healthy' : 'Degraded',
   issues: {
-    nodes: notReadyNodes.length,
-    operators: degraded.length,
-    etcd: unhealthyEtcd.length
+    degradedOperators: degraded.length,
+    unhealthyEtcd: unhealthyEtcd.length
   }
-};
+}, null, 2));
 ```
 
 ## Troubleshooting
@@ -199,12 +199,12 @@ return {
 You can test the server without Claude Desktop:
 
 ```bash
-cd /home/psundara/Downloads/must-gather
-export MUST_GATHER_PATH=/home/psundara/Downloads/must-gather
+cd /path/to/must-gather-code-execution-mcp
+export MUST_GATHER_PATH=/path/to/must-gather.local.xxxxx
 node dist/mcp-server.js
 ```
 
-The server should output: `Must-Gather MCP Server running on stdio`
+The server should output: `Must-Gather Progressive Disclosure MCP Server running`
 
 Press Ctrl+C to stop.
 
@@ -217,16 +217,16 @@ Save this as a template for easy copying:
   "mcpServers": {
     "must-gather": {
       "command": "node",
-      "args": ["ABSOLUTE_PATH_TO/must-gather/dist/mcp-server.js"],
+      "args": ["ABSOLUTE_PATH_TO/must-gather-code-execution-mcp/dist/mcp-server.js"],
       "env": {
-        "MUST_GATHER_PATH": "ABSOLUTE_PATH_TO/must-gather"
+        "MUST_GATHER_PATH": "ABSOLUTE_PATH_TO/must-gather.local.xxxxx"
       }
     }
   }
 }
 ```
 
-Replace `ABSOLUTE_PATH_TO` with your actual path.
+Replace `ABSOLUTE_PATH_TO` with your actual paths.
 
 ## Next Steps
 
